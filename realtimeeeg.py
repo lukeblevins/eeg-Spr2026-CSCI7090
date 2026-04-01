@@ -1,4 +1,5 @@
 
+
 from __future__ import annotations
 
 import time
@@ -15,6 +16,9 @@ from scipy.signal import butter, iirnotch, lfilter, lfilter_zi, resample_poly
 
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 
+
+
+#Global constants including the sampling rate, window size, stride, and target bipolar channels for EEG processing.
 TARGET_FS = 256
 WINDOW_SEC = 30
 STRIDE_SEC = 5
@@ -30,12 +34,15 @@ TARGET_BIPOLAR_CHANNELS = [
     "PO7-OZ",
     "OZ-PO8",
 ]
+#Creates output directories 
 OUTPUT_DIR = "live_eeg_dataset"
 WINDOWS_DIR = os.path.join(OUTPUT_DIR, "windows")
 MANIFEST_PATH = os.path.join(OUTPUT_DIR, "manifest.csv")
 
 os.makedirs(WINDOWS_DIR, exist_ok=True)
 
+
+#Defines metadata to be stored for each window
 @dataclass
 class WindowRecord:
     window_id: str
@@ -53,6 +60,8 @@ class WindowRecord:
     skipped_pairs: List[str]
     notes: str
 
+
+#Standardizes channel names 
 OLD_TO_NEW = {
     "T3": "T7",
     "T4": "T8",
@@ -84,7 +93,7 @@ def clean_basic_name(name):
 
     return name
 
-
+#Checks whether a channel name is considered junk
 def is_junk_channel(name):
     if name in JUNK_EXACT:
         return True
@@ -105,6 +114,8 @@ def clean_channel_dict(chunk):
 
     return cleaned
 
+
+#Builds and cleans on incoming chunk of EEG data
 def build_bipolar_chunk(
     mono_chunk, target_pairs):
     bipolar = {}
@@ -120,6 +131,8 @@ def build_bipolar_chunk(
 
     return bipolar, skipped
 
+
+#Defines preprocessing steps including channel reordering, resampling, filtering, buffering, QC checks, feature extraction, and saving windows with metadata.
 def reorder_channels(chunk, target_order):
     if not all(ch in chunk for ch in target_order):
         return None
@@ -140,7 +153,7 @@ def design_bandpass(fs, low: float = 0.5, high: float = 40.0, order: int = 4):
 def design_notch(fs: int, freq: float = 60.0, q: float = 30.0):
     b, a = iirnotch(freq / (0.5 * fs), q)
     return b, a
-
+# Applies filtering to the incoming EEG data using a bandpass and notch filter, maintaining state for streaming data.
 class StreamingFilter:
     def __init__(self, fs: int, n_channels: int):
         self.fs = fs
@@ -179,7 +192,7 @@ class StreamingFilter:
             )
 
         return out.astype(np.float32)
-
+# Maintains a rolling buffer of EEG data for each channel
 class RollingEEGBuffer:
     def __init__(self, n_channels, fs, buffer_sec):
         self.n_channels = n_channels
@@ -214,12 +227,12 @@ def qc_check(window):
     ])
 
     return checks
-
+#Normalization using z-score per channel to standardize the data before feature extraction.
 def zscore_per_channel(window, eps: float = 1e-8):
     mean = window.mean(axis=1, keepdims=True)
     std = window.std(axis=1, keepdims=True)
     return ((window - mean) / (std + eps)).astype(np.float32)
-
+#Defines various feature extraction methods including bandpower approximation, line length, and Hjorth parameters to extract meaningful features from the EEG data.
 def bandpower_approx(x):
     return float(np.mean(x ** 2))
 
@@ -260,7 +273,7 @@ def extract_features(window):
         ])
 
     return np.asarray(feats, dtype=np.float32)
-
+# Saves the processed EEG window along with its extracted features and metadata
 def save_window_example(
     window: np.ndarray,
     session_id: str,
@@ -307,7 +320,7 @@ def save_window_example(
         skipped_pairs=skipped_pairs,
         notes=notes
     )
-
+# Appends the metadata of the saved window to a manifest CSV file for easy tracking and future reference.
 def append_to_manifest(record, manifest_path: str = MANIFEST_PATH):
     row = asdict(record)
 
@@ -322,7 +335,7 @@ def append_to_manifest(record, manifest_path: str = MANIFEST_PATH):
         df_row.to_csv(manifest_path, mode="a", header=False, index=False)
     else:
         df_row.to_csv(manifest_path, mode="w", header=True, index=False)
-
+# Defines a class to handle streaming EEG data from a BrainFlow-compatible device, allowing for real-time data retrieval and processing.
 class BrainFlowStreamer:
     def __init__(self, board_id, params: BrainFlowInputParams):
         self.board_id = board_id
